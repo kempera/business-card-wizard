@@ -4,12 +4,11 @@ import sqlite3
 import re
 import uuid
 import requests
-from PIL import Image
+import base64
 from io import BytesIO
 
 # ---------------- CONFIG ----------------
 st.set_page_config(page_title="Business Card Wizard", layout="wide")
-
 DB = "contacts.db"
 
 # ---------------- DATABASE ----------------
@@ -33,40 +32,40 @@ CREATE TABLE IF NOT EXISTS contacts (
 """)
 conn.commit()
 
-# ---------------- OCR FUNCTION ----------------
-def ocr_space_image(image_bytes):
-    api_key = st.secrets.get("OCR_SPACE_API_KEY", "helloworld")
+# ---------------- GOOGLE VISION OCR ----------------
+def google_vision_ocr(image_bytes):
+    api_key = st.secrets.get("GOOGLE_VISION_API_KEY", "")
 
-    image = Image.open(BytesIO(image_bytes)).convert("RGB")
-
-    buffer = BytesIO()
-    image.save(buffer, format="JPEG", quality=95)
-    buffer.seek(0)
-
-    response = requests.post(
-        "https://api.ocr.space/parse/image",
-        files={"file": ("card.jpg", buffer.getvalue())},
-        data={
-            "apikey": api_key,
-            "language": "eng",
-            "isOverlayRequired": False,
-            "OCREngine": 2,
-            "scale": True,
-            "detectOrientation": True
-        },
-        timeout=45
-    )
-
-    result = response.json()
-
-    if result.get("IsErroredOnProcessing"):
+    if not api_key:
+        st.error("Missing GOOGLE_VISION_API_KEY in Streamlit Secrets.")
         return ""
 
-    parsed = result.get("ParsedResults", [])
-    if not parsed:
-        return ""
+    url = f"https://vision.googleapis.com/v1/images:annotate?key={api_key}"
 
-    return parsed[0].get("ParsedText", "")
+    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+
+    payload = {
+        "requests": [
+            {
+                "image": {"content": image_base64},
+                "features": [{"type": "TEXT_DETECTION"}]
+            }
+        ]
+    }
+
+    try:
+        response = requests.post(url, json=payload, timeout=45)
+        result = response.json()
+
+        if "error" in result:
+            st.error(result["error"].get("message", "Google Vision API error"))
+            return ""
+
+        return result["responses"][0].get("fullTextAnnotation", {}).get("text", "")
+
+    except Exception as e:
+        st.error(f"OCR failed: {e}")
+        return ""
 
 # ---------------- PARSER ----------------
 def parse_contact(raw_text, event_name, source):
@@ -89,7 +88,8 @@ def parse_contact(raw_text, event_name, source):
     company_keywords = [
         "GmbH", "AG", "LLC", "Ltd", "Inc", "Group",
         "Bank", "Capital", "Partners", "Consulting",
-        "Solutions", "Technology", "Systems", "Services"
+        "Solutions", "Technology", "Systems", "Services",
+        "Corporation", "Corp", "Company", "Holdings"
     ]
 
     company = ""
@@ -105,6 +105,7 @@ def parse_contact(raw_text, event_name, source):
             and "@" not in line
             and not re.search(r"\d", line)
             and len(line.split()) <= 4
+            and len(line) > 2
         ):
             name = line
             break
@@ -112,7 +113,19 @@ def parse_contact(raw_text, event_name, source):
     if not company and len(lines) > 1:
         company = lines[1]
 
-    confidence = 90 if email and phone and name else 70 if email else 40
+    title_keywords = [
+        "manager", "director", "partner", "analyst", "associate",
+        "consultant", "ceo", "cfo", "cto", "president", "vice president",
+        "sales", "business development", "investment", "principal"
+    ]
+
+    title = ""
+    for line in lines:
+        if any(k in line.lower() for k in title_keywords):
+            title = line
+            break
+
+    confidence = 90 if email and phone and name else 75 if email and name else 60 if email else 40
 
     return {
         "id": str(uuid.uuid4())[:8],
@@ -120,7 +133,7 @@ def parse_contact(raw_text, event_name, source):
         "source": source,
         "name": name,
         "company": company,
-        "title": "",
+        "title": title,
         "email": email,
         "phone": phone,
         "status": "New",
@@ -151,10 +164,12 @@ def create_excel(df):
         "company": "Company",
         "email": "Email",
         "phone": "Phone",
-        "status": "Status"
+        "status": "Status",
+        "title": "Title"
     })[[
         "LastName",
         "Company",
+        "Title",
         "Email",
         "Phone",
         "Status",
@@ -178,7 +193,7 @@ def create_excel(df):
 
 # ---------------- UI ----------------
 st.title("📇 Business Card Wizard")
-st.caption("Upload business cards → OCR extraction → dashboard → Excel cube → Salesforce-ready mapping")
+st.caption("Business cards → Google Vision OCR → contact dashboard → Excel cube → Salesforce-ready mapping")
 
 event_name = st.text_input("Event name", value="GB AI Innovation Day")
 
@@ -188,12 +203,12 @@ tab1, tab2, tab3 = st.tabs([
     "Salesforce Demo"
 ])
 
-# ---------------- TAB 1 ----------------
+# ---------------- TAB 1: UPLOAD ----------------
 with tab1:
     st.subheader("Upload business card photos")
 
     files = st.file_uploader(
-        "Upload one or more card images",
+        "Upload one or more business card images",
         type=["jpg", "jpeg", "png"],
         accept_multiple_files=True
     )
@@ -203,10 +218,11 @@ with tab1:
             st.warning("Please upload at least one image.")
         else:
             for file in files:
-                st.image(file, caption=f"Uploaded: {file.name}", width=350)
-
                 image_bytes = file.getvalue()
-                raw_text = ocr_space_image(image_bytes)
+
+                st.image(image_bytes, caption=f"Uploaded: {file.name}", width=350)
+
+                raw_text = google_vision_ocr(image_bytes)
 
                 st.subheader("OCR text detected")
                 st.text_area(
@@ -223,7 +239,7 @@ with tab1:
 
             st.success(f"{len(files)} card(s) processed and saved.")
 
-# ---------------- TAB 2 ----------------
+# ---------------- TAB 2: DASHBOARD ----------------
 with tab2:
     st.subheader("Event / Contact Dashboard")
 
@@ -252,9 +268,9 @@ with tab2:
 
         if st.button("🧹 Clear demo database"):
             delete_all_contacts()
-            st.success("Demo database cleared. Please refresh the page.")
+            st.success("Demo database cleared. Refresh the page.")
 
-# ---------------- TAB 3 ----------------
+# ---------------- TAB 3: SALESFORCE ----------------
 with tab3:
     st.subheader("Salesforce-ready field mapping")
 
@@ -268,10 +284,12 @@ with tab3:
             "company": "Company",
             "email": "Email",
             "phone": "Phone",
-            "status": "Status"
+            "status": "Status",
+            "title": "Title"
         })[[
             "LastName",
             "Company",
+            "Title",
             "Email",
             "Phone",
             "Status",
@@ -282,6 +300,4 @@ with tab3:
         st.dataframe(sf_df, use_container_width=True)
 
         if st.button("☁️ Demo: Push to Salesforce"):
-            st.success(
-                "Demo push successful. In production this connects to Salesforce via OAuth/API."
-            )
+            st.success("Demo push successful. In production this connects to Salesforce via OAuth/API.")
