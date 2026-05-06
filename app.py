@@ -7,11 +7,9 @@ import requests
 import base64
 from io import BytesIO
 
-# ---------------- CONFIG ----------------
 st.set_page_config(page_title="Business Card Wizard", layout="wide")
 DB = "contacts.db"
 
-# ---------------- DATABASE ----------------
 conn = sqlite3.connect(DB, check_same_thread=False)
 cursor = conn.cursor()
 
@@ -25,6 +23,8 @@ CREATE TABLE IF NOT EXISTS contacts (
     title TEXT,
     email TEXT,
     phone TEXT,
+    mobile TEXT,
+    linkedin_url TEXT,
     status TEXT,
     confidence INTEGER,
     raw_text TEXT
@@ -32,7 +32,22 @@ CREATE TABLE IF NOT EXISTS contacts (
 """)
 conn.commit()
 
-# ---------------- GOOGLE VISION OCR ----------------
+
+def ensure_columns():
+    existing = pd.read_sql_query("PRAGMA table_info(contacts)", conn)["name"].tolist()
+
+    if "mobile" not in existing:
+        cursor.execute("ALTER TABLE contacts ADD COLUMN mobile TEXT")
+
+    if "linkedin_url" not in existing:
+        cursor.execute("ALTER TABLE contacts ADD COLUMN linkedin_url TEXT")
+
+    conn.commit()
+
+
+ensure_columns()
+
+
 def google_vision_ocr(image_bytes):
     api_key = st.secrets.get("GOOGLE_VISION_API_KEY", "")
 
@@ -67,7 +82,74 @@ def google_vision_ocr(image_bytes):
         st.error(f"OCR failed: {e}")
         return ""
 
-# ---------------- PARSER ----------------
+
+def extract_linkedin(text):
+    linkedin_match = re.search(
+        r"(https?://)?(www\.)?linkedin\.com/[A-Za-z0-9_\-/%]+",
+        text,
+        re.IGNORECASE
+    )
+
+    if linkedin_match:
+        url = linkedin_match.group(0)
+        if not url.startswith("http"):
+            url = "https://" + url
+        return url
+
+    return ""
+
+
+def extract_phone_numbers(text):
+    candidates = re.findall(r"(\+?\d[\d\s()./-]{7,}\d)", text)
+
+    cleaned = []
+    for number in candidates:
+        number_clean = re.sub(r"\s+", " ", number).strip()
+        digits = re.sub(r"\D", "", number_clean)
+
+        if 8 <= len(digits) <= 16:
+            cleaned.append(number_clean)
+
+    mobile_keywords = ["mobile", "mob", "cell", "cellphone", "m:", "m ", "handy"]
+
+    mobile = ""
+    phone = ""
+
+    lines = text.splitlines()
+
+    for line in lines:
+        line_lower = line.lower()
+        if any(k in line_lower for k in mobile_keywords):
+            match = re.search(r"(\+?\d[\d\s()./-]{7,}\d)", line)
+            if match:
+                mobile = match.group(0).strip()
+                break
+
+    if not mobile:
+        for number in cleaned:
+            digits = re.sub(r"\D", "", number)
+
+            if (
+                digits.startswith("49")
+                and len(digits) >= 11
+                and digits[2:4] in ["15", "16", "17"]
+            ):
+                mobile = number
+                break
+
+            if digits.startswith("01") and len(digits) >= 10:
+                mobile = number
+                break
+
+    if cleaned:
+        phone = cleaned[0]
+
+    if mobile and phone == mobile and len(cleaned) > 1:
+        phone = cleaned[1]
+
+    return phone, mobile
+
+
 def parse_contact(raw_text, event_name, source):
     lines = [x.strip() for x in raw_text.splitlines() if x.strip()]
     text = " ".join(lines)
@@ -77,13 +159,9 @@ def parse_contact(raw_text, event_name, source):
         text
     )
 
-    phone_match = re.search(
-        r"(\+?\d[\d\s()./-]{7,}\d)",
-        text
-    )
-
     email = email_match.group(0) if email_match else ""
-    phone = phone_match.group(0) if phone_match else ""
+    phone, mobile = extract_phone_numbers(raw_text)
+    linkedin_url = extract_linkedin(text)
 
     company_keywords = [
         "GmbH", "AG", "LLC", "Ltd", "Inc", "Group",
@@ -98,11 +176,26 @@ def parse_contact(raw_text, event_name, source):
             company = line
             break
 
+    title_keywords = [
+        "manager", "director", "partner", "analyst", "associate",
+        "consultant", "ceo", "cfo", "cto", "president", "vice president",
+        "sales", "business development", "investment", "principal",
+        "founder", "owner", "head", "lead"
+    ]
+
+    title = ""
+    for line in lines:
+        if any(k in line.lower() for k in title_keywords):
+            title = line
+            break
+
     name = ""
     for line in lines:
         if (
             line != company
+            and line != title
             and "@" not in line
+            and "linkedin" not in line.lower()
             and not re.search(r"\d", line)
             and len(line.split()) <= 4
             and len(line) > 2
@@ -113,19 +206,17 @@ def parse_contact(raw_text, event_name, source):
     if not company and len(lines) > 1:
         company = lines[1]
 
-    title_keywords = [
-        "manager", "director", "partner", "analyst", "associate",
-        "consultant", "ceo", "cfo", "cto", "president", "vice president",
-        "sales", "business development", "investment", "principal"
-    ]
+    confidence = 40
+    if email:
+        confidence += 20
+    if phone or mobile:
+        confidence += 15
+    if name:
+        confidence += 15
+    if company:
+        confidence += 10
 
-    title = ""
-    for line in lines:
-        if any(k in line.lower() for k in title_keywords):
-            title = line
-            break
-
-    confidence = 90 if email and phone and name else 75 if email and name else 60 if email else 40
+    confidence = min(confidence, 95)
 
     return {
         "id": str(uuid.uuid4())[:8],
@@ -136,26 +227,30 @@ def parse_contact(raw_text, event_name, source):
         "title": title,
         "email": email,
         "phone": phone,
+        "mobile": mobile,
+        "linkedin_url": linkedin_url,
         "status": "New",
         "confidence": confidence,
         "raw_text": raw_text
     }
 
-# ---------------- DATABASE HELPERS ----------------
+
 def save_contact(contact):
     cursor.execute("""
-    INSERT OR REPLACE INTO contacts VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO contacts VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, tuple(contact.values()))
     conn.commit()
 
+
 def load_contacts():
     return pd.read_sql_query("SELECT * FROM contacts", conn)
+
 
 def delete_all_contacts():
     cursor.execute("DELETE FROM contacts")
     conn.commit()
 
-# ---------------- EXCEL EXPORT ----------------
+
 def create_excel(df):
     buffer = BytesIO()
 
@@ -164,6 +259,8 @@ def create_excel(df):
         "company": "Company",
         "email": "Email",
         "phone": "Phone",
+        "mobile": "MobilePhone",
+        "linkedin_url": "LinkedIn_Profile__c",
         "status": "Status",
         "title": "Title"
     })[[
@@ -172,6 +269,8 @@ def create_excel(df):
         "Title",
         "Email",
         "Phone",
+        "MobilePhone",
+        "LinkedIn_Profile__c",
         "Status",
         "event_name",
         "confidence"
@@ -191,7 +290,7 @@ def create_excel(df):
 
     return buffer.getvalue()
 
-# ---------------- UI ----------------
+
 st.title("📇 Business Card Wizard")
 st.caption("Business cards → Google Vision OCR → contact dashboard → Excel cube → Salesforce-ready mapping")
 
@@ -203,7 +302,6 @@ tab1, tab2, tab3 = st.tabs([
     "Salesforce Demo"
 ])
 
-# ---------------- TAB 1: UPLOAD ----------------
 with tab1:
     st.subheader("Upload business card photos")
 
@@ -239,7 +337,6 @@ with tab1:
 
             st.success(f"{len(files)} card(s) processed and saved.")
 
-# ---------------- TAB 2: DASHBOARD ----------------
 with tab2:
     st.subheader("Event / Contact Dashboard")
 
@@ -270,7 +367,6 @@ with tab2:
             delete_all_contacts()
             st.success("Demo database cleared. Refresh the page.")
 
-# ---------------- TAB 3: SALESFORCE ----------------
 with tab3:
     st.subheader("Salesforce-ready field mapping")
 
@@ -284,6 +380,8 @@ with tab3:
             "company": "Company",
             "email": "Email",
             "phone": "Phone",
+            "mobile": "MobilePhone",
+            "linkedin_url": "LinkedIn_Profile__c",
             "status": "Status",
             "title": "Title"
         })[[
@@ -292,6 +390,8 @@ with tab3:
             "Title",
             "Email",
             "Phone",
+            "MobilePhone",
+            "LinkedIn_Profile__c",
             "Status",
             "event_name",
             "confidence"
