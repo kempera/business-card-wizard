@@ -1,6 +1,5 @@
 streamlit
-easyocr
-pillow
 pandas
 openpyxl
-numpy
+pillow
+requests
