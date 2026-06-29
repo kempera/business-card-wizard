@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+
+# next
+.next/
+out/
+
+# production
+build/
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# local data
+contacts.db
+*.sqlite
+*.sqlite3
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+Thumbs.db
