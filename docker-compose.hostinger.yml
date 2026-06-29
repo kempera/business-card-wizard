@@ -27,6 +27,12 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-bcw_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-business_card_wizard}
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.business-card-wizard.entrypoints: websecure
+      traefik.http.routers.business-card-wizard.rule: Host(`business-card-wizard.srv1766569.hstgr.cloud`)
+      traefik.http.routers.business-card-wizard.tls.certresolver: letsencrypt
+      traefik.http.services.business-card-wizard.loadbalancer.server.port: "3000"
     ports:
       - "127.0.0.1:3007:3000"
 
