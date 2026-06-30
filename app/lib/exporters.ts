@@ -59,6 +59,48 @@ export async function contactsExcel(contacts: ContactRecord[]): Promise<Buffer> 
   });
   eventSheet.getRow(1).font = { bold: true };
 
+  // Enrichment sheet — one row per enriched contact with flattened NinjaPear fields
+  const enrichSheet = workbook.addWorksheet("Enrichment Data");
+  enrichSheet.columns = [
+    { header: "Name", key: "name", width: 24 },
+    { header: "Email", key: "email", width: 30 },
+    { header: "Provider", key: "provider", width: 14 },
+    { header: "Fetched At", key: "fetched_at", width: 14 },
+    { header: "Headline", key: "headline", width: 40 },
+    { header: "Location", key: "location", width: 28 },
+    { header: "Current Role", key: "current_role", width: 32 },
+    { header: "Current Company", key: "current_company", width: 32 },
+    { header: "Education", key: "education", width: 36 },
+    { header: "Summary", key: "summary", width: 60 },
+    { header: "Enrichment Status", key: "enrichment_status", width: 18 },
+    { header: "Raw JSON", key: "raw_json", width: 40 }
+  ];
+  contacts
+    .filter((c) => c.enriched_json)
+    .forEach((contact) => {
+      const ej = contact.enriched_json as Record<string, unknown>;
+      const profile = (ej.profile ?? ej) as Record<string, unknown>;
+      const exp = Array.isArray(profile.experiences) ? profile.experiences as Record<string, unknown>[] : [];
+      const current = exp.find((e) => !e.ends_at) || exp[0];
+      const edu = Array.isArray(profile.education) ? profile.education as Record<string, unknown>[] : [];
+      const latestEdu = edu[0];
+      enrichSheet.addRow({
+        name: contact.name || `${contact.first_name} ${contact.last_name}`.trim(),
+        email: contact.email,
+        provider: String(ej.provider || ""),
+        fetched_at: String(ej.fetched_at || "").slice(0, 10),
+        headline: String(profile.headline || ""),
+        location: [profile.city, profile.country].filter(Boolean).join(", ") || String(profile.location || ""),
+        current_role: current ? String(current.title || "") : "",
+        current_company: current ? String(current.company || current.company_name || "") : "",
+        education: latestEdu ? [latestEdu.school, latestEdu.degree_name].filter(Boolean).join(" · ") : "",
+        summary: String(profile.summary || "").slice(0, 500),
+        enrichment_status: String(ej.enrichment_status || "complete"),
+        raw_json: JSON.stringify(ej).slice(0, 32000)
+      });
+    });
+  enrichSheet.getRow(1).font = { bold: true };
+
   const arrayBuffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(arrayBuffer);
 }
