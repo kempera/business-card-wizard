@@ -29,43 +29,97 @@ function textToTags(value: string): string[] {
   return value.split(",").map((tag) => tag.trim()).filter(Boolean);
 }
 
-/** Pull the most useful fields from a NinjaPear enrichment payload for inline display */
-function parseEnrichment(enriched_json: Record<string, unknown> | null): {
+/** Parsed enrichment data from NinjaPear API (actual field names from live response) */
+interface EnrichmentData {
+  fullName?: string;
   headline?: string;
   location?: string;
+  photo?: string;
+  bio?: string;
   currentRole?: string;
   currentCompany?: string;
-  education?: string;
-  photo?: string;
-  summary?: string;
+  currentCompanyWebsite?: string;
+  currentSince?: string;
+  currentDescription?: string;
+  pastRoles: { role: string; company: string; period: string; description?: string }[];
+  education: { school: string; major?: string; period?: string }[];
+  website?: string;
+  xHandle?: string;
   provider?: string;
   fetchedAt?: string;
   enrichmentStatus?: string;
-} | null {
+}
+
+function str(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+
+/** Parse NinjaPear enrichment payload — handles actual field names from live API */
+function parseEnrichment(enriched_json: Record<string, unknown> | null): EnrichmentData | null {
   if (!enriched_json) return null;
   const profile = (enriched_json.profile ?? enriched_json) as Record<string, unknown>;
   if (!profile || typeof profile !== "object") return null;
 
-  const exp = Array.isArray(profile.experiences) ? profile.experiences as Record<string, unknown>[] : [];
-  const current = exp.find((e) => !e.ends_at) || exp[0];
-  const edu = Array.isArray(profile.education) ? profile.education as Record<string, unknown>[] : [];
-  const latestEdu = edu[0];
+  // Location: city/state/country_name from NinjaPear
+  const locationParts = [
+    str(profile.city_name || profile.city),
+    str(profile.state_name || profile.state),
+    str(profile.country_name || profile.country)
+  ].filter(Boolean);
+  const location = locationParts.length ? locationParts.join(", ") : str(profile.location_display);
+
+  // Work experience uses `work_experience` array, current = is_current true
+  const workExp = Array.isArray(profile.work_experience)
+    ? (profile.work_experience as Record<string, unknown>[])
+    : [];
+  const current = workExp.find((e) => e.is_current === true) || workExp[0];
+  const past = workExp.filter((e) => e !== current);
+
+  function formatPeriod(e: Record<string, unknown>): string {
+    const start = str(e.start_date).slice(0, 7);
+    const end = e.is_current ? "present" : str(e.end_date).slice(0, 7);
+    if (!start && !end) return "";
+    if (!start) return end;
+    if (!end) return start;
+    return `${start} – ${end}`;
+  }
+
+  // Education uses `education` array with `school`, `major`
+  const eduRaw = Array.isArray(profile.education)
+    ? (profile.education as Record<string, unknown>[])
+    : [];
 
   return {
-    headline: typeof profile.headline === "string" ? profile.headline : undefined,
-    location: typeof profile.city === "string"
-      ? [profile.city, profile.country].filter(Boolean).join(", ")
-      : typeof profile.location === "string" ? profile.location : undefined,
-    currentRole: current ? String(current.title || "") : undefined,
-    currentCompany: current ? String(current.company || current.company_name || "") : undefined,
-    education: latestEdu
-      ? [latestEdu.school, latestEdu.degree_name].filter(Boolean).join(" · ")
-      : undefined,
-    photo: typeof profile.profile_pic_url === "string" ? profile.profile_pic_url : undefined,
-    summary: typeof profile.summary === "string" ? profile.summary.slice(0, 220) : undefined,
-    provider: typeof enriched_json.provider === "string" ? enriched_json.provider : undefined,
-    fetchedAt: typeof enriched_json.fetched_at === "string" ? enriched_json.fetched_at.slice(0, 10) : undefined,
-    enrichmentStatus: typeof enriched_json.enrichment_status === "string" ? enriched_json.enrichment_status : undefined,
+    fullName: str(profile.full_name),
+    headline: str(profile.headline),
+    location: location || undefined,
+    photo: str(profile.profile_pic_url) || undefined,
+    bio: str(profile.bio) || undefined,
+    currentRole: current ? str(current.role) : undefined,
+    currentCompany: current ? str(current.company_name) : undefined,
+    currentCompanyWebsite: current ? str(current.company_website) : undefined,
+    currentSince: current ? str(current.start_date).slice(0, 7) : undefined,
+    currentDescription: current ? str(current.description) : undefined,
+    pastRoles: past.map((e) => ({
+      role: str(e.role),
+      company: str(e.company_name),
+      period: formatPeriod(e),
+      description: str(e.description) || undefined
+    })).filter((e) => e.role || e.company),
+    education: eduRaw.map((e) => ({
+      school: str(e.school),
+      major: str(e.major) || undefined,
+      period: (() => {
+        const s = str(e.start_date).slice(0, 4);
+        const en = str(e.end_date).slice(0, 4);
+        return s || en ? [s, en].filter(Boolean).join(" – ") : undefined;
+      })()
+    })).filter((e) => e.school),
+    website: str(profile.personal_website) || undefined,
+    xHandle: str(profile.x_handle) || undefined,
+    provider: str(enriched_json.provider) || undefined,
+    fetchedAt: str(enriched_json.fetched_at).slice(0, 10) || undefined,
+    enrichmentStatus: str(enriched_json.enrichment_status) || undefined,
   };
 }
 
@@ -400,29 +454,120 @@ function EnrichmentPanel({ enriched_json }: { enriched_json: Record<string, unkn
 
   return (
     <div className="enrichPanel">
+
+      {/* ── Header row: photo + name + meta badges ── */}
       <div className="enrichHeader">
         {p.photo ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img className="enrichPhoto" src={p.photo} alt="Profile" width={48} height={48} />
-        ) : null}
-        <div>
+          <img className="enrichPhoto" src={p.photo} alt="Profile" width={52} height={52} />
+        ) : (
+          <div className="enrichPhotoPlaceholder">👤</div>
+        )}
+        <div className="enrichHeaderText">
+          {p.fullName ? <div className="enrichName">{p.fullName}</div> : null}
           {p.headline ? <div className="enrichHeadline">{p.headline}</div> : null}
           {p.location ? <div className="enrichMeta">📍 {p.location}</div> : null}
         </div>
-        <div className="enrichMeta" style={{ marginLeft: "auto", textAlign: "right" }}>
-          {p.provider ? <span className="badge">{p.provider}</span> : null}
+        <div className="enrichBadgeGroup">
+          {p.provider ? <span className="badge enrichProviderBadge">{p.provider}</span> : null}
           {p.fetchedAt ? <span className="badge">{p.fetchedAt}</span> : null}
-          {p.enrichmentStatus === "pending" ? <span className="badge warn">⏳ pending</span> : null}
+          {p.enrichmentStatus === "pending" ? <span className="badge badgeWarn">⏳ pending</span> : null}
         </div>
       </div>
-      {(p.currentRole || p.currentCompany) ? (
-        <div className="enrichRow"><strong>Current:</strong> {[p.currentRole, p.currentCompany].filter(Boolean).join(" at ")}</div>
-      ) : null}
-      {p.education ? <div className="enrichRow"><strong>Education:</strong> {p.education}</div> : null}
-      {p.summary ? <div className="enrichRow enrichSummary">{p.summary}{p.summary.length >= 220 ? "…" : ""}</div> : null}
-      <details style={{ marginTop: 8 }}>
+
+      {/* ── Key facts overview table ── */}
+      <table className="enrichTable">
+        <tbody>
+
+          {/* Current position */}
+          {(p.currentRole || p.currentCompany) ? (
+            <tr>
+              <th>💼 Current role</th>
+              <td>
+                <strong>{p.currentRole || "—"}</strong>
+                {p.currentCompany ? (
+                  <span>
+                    {" "}at {p.currentCompanyWebsite
+                      ? <a href={`https://${p.currentCompanyWebsite}`} target="_blank" rel="noreferrer">{p.currentCompany} ↗</a>
+                      : p.currentCompany}
+                  </span>
+                ) : null}
+                {p.currentSince ? <span className="enrichMeta"> · since {p.currentSince}</span> : null}
+                {p.currentDescription ? <div className="enrichDesc">{p.currentDescription}</div> : null}
+              </td>
+            </tr>
+          ) : null}
+
+          {/* Location */}
+          {p.location ? (
+            <tr>
+              <th>📍 Location</th>
+              <td>{p.location}</td>
+            </tr>
+          ) : null}
+
+          {/* Career history */}
+          {p.pastRoles.length > 0 ? (
+            <tr>
+              <th>📋 Career</th>
+              <td>
+                <div className="enrichCareerList">
+                  {p.pastRoles.map((role, i) => (
+                    <div key={i} className="enrichCareerItem">
+                      <span className="enrichCareerRole">{role.role}</span>
+                      {role.company ? <span className="enrichCareerCompany"> · {role.company}</span> : null}
+                      {role.period ? <span className="enrichCareerPeriod"> ({role.period})</span> : null}
+                    </div>
+                  ))}
+                </div>
+              </td>
+            </tr>
+          ) : null}
+
+          {/* Education */}
+          {p.education.length > 0 ? (
+            <tr>
+              <th>🎓 Education</th>
+              <td>
+                <div className="enrichCareerList">
+                  {p.education.map((edu, i) => (
+                    <div key={i} className="enrichCareerItem">
+                      <span className="enrichCareerRole">{edu.school}</span>
+                      {edu.major ? <span className="enrichCareerCompany"> · {edu.major}</span> : null}
+                      {edu.period ? <span className="enrichCareerPeriod"> ({edu.period})</span> : null}
+                    </div>
+                  ))}
+                </div>
+              </td>
+            </tr>
+          ) : null}
+
+          {/* Bio */}
+          {p.bio ? (
+            <tr>
+              <th>📝 Bio</th>
+              <td className="enrichBioCell">{p.bio}</td>
+            </tr>
+          ) : null}
+
+          {/* Online */}
+          {(p.website || p.xHandle) ? (
+            <tr>
+              <th>🔗 Online</th>
+              <td>
+                {p.website ? <a href={p.website} target="_blank" rel="noreferrer">{p.website}</a> : null}
+                {p.xHandle ? <span style={{ marginLeft: 12 }}>𝕏 @{p.xHandle}</span> : null}
+              </td>
+            </tr>
+          ) : null}
+
+        </tbody>
+      </table>
+
+      {/* ── Raw JSON collapsible ── */}
+      <details className="enrichRawWrap">
         <summary className="enrichToggle">Raw enrichment JSON</summary>
-        <pre className="rawText" style={{ maxHeight: 220 }}>{JSON.stringify(enriched_json, null, 2)}</pre>
+        <pre className="rawText" style={{ maxHeight: 240 }}>{JSON.stringify(enriched_json, null, 2)}</pre>
       </details>
     </div>
   );

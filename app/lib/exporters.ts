@@ -80,21 +80,25 @@ export async function contactsExcel(contacts: ContactRecord[]): Promise<Buffer> 
     .forEach((contact) => {
       const ej = contact.enriched_json as Record<string, unknown>;
       const profile = (ej.profile ?? ej) as Record<string, unknown>;
-      const exp = Array.isArray(profile.experiences) ? profile.experiences as Record<string, unknown>[] : [];
-      const current = exp.find((e) => !e.ends_at) || exp[0];
+      const exp = Array.isArray(profile.work_experience) ? profile.work_experience as Record<string, unknown>[] : [];
+      const current = exp.find((e) => e.is_current === true) || exp[0];
       const edu = Array.isArray(profile.education) ? profile.education as Record<string, unknown>[] : [];
       const latestEdu = edu[0];
+      const locationParts = [
+        String(profile.city_name || profile.city || ""),
+        String(profile.country_name || profile.country || "")
+      ].filter(Boolean);
       enrichSheet.addRow({
         name: contact.name || `${contact.first_name} ${contact.last_name}`.trim(),
         email: contact.email,
         provider: String(ej.provider || ""),
         fetched_at: String(ej.fetched_at || "").slice(0, 10),
         headline: String(profile.headline || ""),
-        location: [profile.city, profile.country].filter(Boolean).join(", ") || String(profile.location || ""),
-        current_role: current ? String(current.title || "") : "",
-        current_company: current ? String(current.company || current.company_name || "") : "",
-        education: latestEdu ? [latestEdu.school, latestEdu.degree_name].filter(Boolean).join(" · ") : "",
-        summary: String(profile.summary || "").slice(0, 500),
+        location: locationParts.join(", ") || String(profile.location_display || ""),
+        current_role: current ? String(current.role || "") : "",
+        current_company: current ? String(current.company_name || "") : "",
+        education: latestEdu ? [latestEdu.school, latestEdu.major].filter(Boolean).join(" · ") : "",
+        summary: String(profile.bio || "").slice(0, 500),
         enrichment_status: String(ej.enrichment_status || "complete"),
         raw_json: JSON.stringify(ej).slice(0, 32000)
       });

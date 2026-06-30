@@ -73,18 +73,45 @@ th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spa
 }
 
 /* Enrichment panel */
-.enrichPanel { padding: 14px 16px; background: #f8faff; border-top: 1px solid var(--line); border-radius: 0 0 16px 16px; }
+.enrichPanel { padding: 16px 20px 12px; background: #f8faff; border-top: 2px solid #c7d2fe; border-radius: 0 0 16px 16px; }
 .enrichPanel.empty { color: var(--muted); font-size: 13px; }
-.enrichHeader { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 10px; flex-wrap: wrap; }
+
+/* Header */
+.enrichHeader { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 14px; flex-wrap: wrap; }
 .enrichPhoto { border-radius: 50%; object-fit: cover; border: 2px solid var(--line); flex-shrink: 0; }
-.enrichHeadline { font-weight: 700; font-size: 14px; color: var(--ink); }
-.enrichMeta { font-size: 12px; color: var(--muted); margin-top: 2px; }
-.enrichRow { font-size: 13px; padding: 4px 0; border-top: 1px solid var(--line); color: var(--ink); }
-.enrichRow td { background: #f8faff; }
-.enrichSummary { font-style: italic; color: var(--muted); }
-.enrichToggle { font-size: 12px; color: var(--brand); cursor: pointer; }
+.enrichPhotoPlaceholder { width: 52px; height: 52px; border-radius: 50%; background: #e0e7ff; display: flex; align-items: center; justify-content: center; font-size: 22px; flex-shrink: 0; }
+.enrichHeaderText { flex: 1; min-width: 0; }
+.enrichName { font-weight: 800; font-size: 15px; color: var(--ink); }
+.enrichHeadline { font-size: 13px; color: var(--brand-strong); margin-top: 2px; }
+.enrichMeta { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.enrichBadgeGroup { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; margin-left: auto; }
+.enrichProviderBadge { background: #ede9fe; color: #6d28d9; border: 1px solid #ddd6fe; }
+.badgeWarn { background: #fffbeb; color: var(--warn); border: 1px solid #fde68a; }
+
+/* Key facts table */
+.enrichTable { width: 100%; border-collapse: collapse; margin-top: 2px; font-size: 13px; }
+.enrichTable th { width: 130px; text-align: left; padding: 7px 10px 7px 0; color: var(--muted); font-weight: 700; font-size: 12px; vertical-align: top; white-space: nowrap; border-top: 1px solid #e0e7ff; }
+.enrichTable td { padding: 7px 0 7px 10px; border-top: 1px solid #e0e7ff; color: var(--ink); vertical-align: top; line-height: 1.5; }
+.enrichTable tr:first-child th,
+.enrichTable tr:first-child td { border-top: none; }
+.enrichTable a { color: var(--brand-strong); text-decoration: none; }
+.enrichTable a:hover { text-decoration: underline; }
+
+/* Career / education list inside table cell */
+.enrichCareerList { display: flex; flex-direction: column; gap: 4px; }
+.enrichCareerItem { line-height: 1.4; }
+.enrichCareerRole { font-weight: 700; color: var(--ink); }
+.enrichCareerCompany { color: var(--brand-strong); }
+.enrichCareerPeriod { color: var(--muted); font-size: 11px; }
+.enrichDesc { color: var(--muted); font-size: 12px; margin-top: 3px; font-style: italic; }
+.enrichBioCell { color: var(--muted); font-style: italic; }
+
+/* Raw JSON toggle */
+.enrichRawWrap { margin-top: 10px; }
+.enrichToggle { font-size: 12px; color: var(--brand); cursor: pointer; user-select: none; }
+
+/* Table row states */
 .enrichBadge { background: #eef2ff; color: var(--brand-strong); border: 1px solid #c7d2fe; border-radius: 999px; padding: 3px 9px; font-size: 12px; cursor: pointer; white-space: nowrap; }
 .enrichBadge.empty { background: transparent; border: none; color: var(--muted); cursor: default; }
-.badge.warn { background: #fffbeb; color: var(--warn); border: 1px solid #fde68a; }
-tr.rowExpanded td { background: #f8faff; }
+tr.rowExpanded > td { background: #f0f4ff; }
 .btn.enriching { opacity: .7; cursor: wait; }
