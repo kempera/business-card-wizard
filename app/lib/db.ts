@@ -200,10 +200,26 @@ export async function saveReviewedContact(input: Partial<ContactDraft> & { id?: 
 }
 
 export async function updateContact(id: string, patch: Partial<ContactDraft> & Record<string, unknown>): Promise<ContactRecord> {
+  await ensureSchema();
   const existing = await getContact(id);
   if (!existing) throw new ConfigurationError(`Contact not found: ${id}`);
-  const result = await saveReviewedContact({ ...existing, ...patch, id });
-  return result.contact;
+
+  // Dashboard edits should update this exact contact, not trigger dedupe/merge behavior.
+  const contact = withContactDefaults({ ...existing, ...patch });
+  const values = contactValues(id, contact);
+  const updates = contactColumns
+    .filter((column) => column !== "id")
+    .map((column) => `${column} = EXCLUDED.${column}`)
+    .join(", ");
+
+  const result = await getPool().query(
+    `INSERT INTO contacts (${contactColumns.join(", ")})
+     VALUES (${contactColumns.map((_, index) => `$${index + 1}`).join(", ")})
+     ON CONFLICT (id) DO UPDATE SET ${updates}, updated_at = NOW()
+     RETURNING *`,
+    values
+  );
+  return mapContact(result.rows[0]);
 }
 
 export async function setContactSalesforceId(id: string, salesforceId: string): Promise<void> {

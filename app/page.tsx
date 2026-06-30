@@ -139,6 +139,8 @@ export default function Home() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [enrichingId, setEnrichingId] = useState<string | null>(null);
   const [expandedEnrichId, setExpandedEnrichId] = useState<string | null>(null);
+  const [editingContact, setEditingContact] = useState<ContactRecord | null>(null);
+  const [savingEditId, setSavingEditId] = useState<string | null>(null);
 
   async function loadContacts() {
     const response = await fetch("/api/contacts", { cache: "no-store" });
@@ -226,7 +228,43 @@ export default function Home() {
     await fetch(`/api/contacts/${id}`, { method: "DELETE" });
     setSelectedIds((current) => current.filter((selected) => selected !== id));
     if (expandedEnrichId === id) setExpandedEnrichId(null);
+    if (editingContact?.id === id) setEditingContact(null);
     await loadContacts();
+  }
+
+  function startEditContact(contact: ContactRecord) {
+    setError("");
+    setMessage("");
+    setExpandedEnrichId(null);
+    setEditingContact({ ...contact });
+  }
+
+  function updateEditingContact(patch: Partial<ContactRecord>) {
+    setEditingContact((current) => current ? { ...current, ...patch } : current);
+  }
+
+  async function saveEditingContact() {
+    if (!editingContact) return;
+    setError("");
+    setMessage("");
+    setSavingEditId(editingContact.id);
+    try {
+      const response = await fetch(`/api/contacts/${editingContact.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(editingContact)
+      });
+      const data = await response.json() as { contact?: ContactRecord; error?: string };
+      if (!response.ok) {
+        setError(data.error || "Could not update contact.");
+        return;
+      }
+      setMessage(`✅ Updated ${data.contact?.name || editingContact.name || "contact"}.`);
+      setEditingContact(null);
+      await loadContacts();
+    } finally {
+      setSavingEditId(null);
+    }
   }
 
   async function enrichContact(id: string) {
@@ -398,6 +436,12 @@ export default function Home() {
               enrichingId={enrichingId}
               expandedEnrichId={expandedEnrichId}
               onToggleEnrich={(id) => setExpandedEnrichId((current) => current === id ? null : id)}
+              editingContact={editingContact}
+              savingEditId={savingEditId}
+              onStartEdit={startEditContact}
+              onUpdateEdit={updateEditingContact}
+              onCancelEdit={() => setEditingContact(null)}
+              onSaveEdit={saveEditingContact}
             />
           </div>
         </section>
@@ -421,6 +465,12 @@ export default function Home() {
             enrichingId={enrichingId}
             expandedEnrichId={expandedEnrichId}
             onToggleEnrich={(id) => setExpandedEnrichId((current) => current === id ? null : id)}
+            editingContact={editingContact}
+            savingEditId={savingEditId}
+            onStartEdit={startEditContact}
+            onUpdateEdit={updateEditingContact}
+            onCancelEdit={() => setEditingContact(null)}
+            onSaveEdit={saveEditingContact}
             compact
           />
         </section>
@@ -579,6 +629,12 @@ function ContactTable({
   enrichingId,
   expandedEnrichId,
   onToggleEnrich,
+  editingContact,
+  savingEditId,
+  onStartEdit,
+  onUpdateEdit,
+  onCancelEdit,
+  onSaveEdit,
   compact = false
 }: {
   contacts: ContactRecord[];
@@ -589,6 +645,12 @@ function ContactTable({
   enrichingId: string | null;
   expandedEnrichId: string | null;
   onToggleEnrich: (id: string) => void;
+  editingContact: ContactRecord | null;
+  savingEditId: string | null;
+  onStartEdit: (contact: ContactRecord) => void;
+  onUpdateEdit: (patch: Partial<ContactRecord>) => void;
+  onCancelEdit: () => void;
+  onSaveEdit: () => void;
   compact?: boolean;
 }) {
   if (!contacts.length) return <div className="notice">No contacts yet.</div>;
@@ -618,9 +680,10 @@ function ContactTable({
             const enrichData = parseEnrichment(contact.enriched_json);
             const isEnriching = enrichingId === contact.id;
             const isExpanded = expandedEnrichId === contact.id;
+            const isEditing = editingContact?.id === contact.id;
             return (
-              <>
-                <tr key={contact.id} className={isExpanded ? "rowExpanded" : ""}>
+              <React.Fragment key={contact.id}>
+                <tr className={isExpanded || isEditing ? "rowExpanded" : ""}>
                   <td><input type="checkbox" checked={selectedIds.includes(contact.id)} onChange={() => toggle(contact.id)} /></td>
                   <td>
                     <strong>{contact.name || `${contact.first_name} ${contact.last_name}`}</strong>
@@ -659,6 +722,14 @@ function ContactTable({
                       ) : null}
                       {!compact ? (
                         <button
+                          className="btn ghost"
+                          onClick={() => isEditing ? onCancelEdit() : onStartEdit(contact)}
+                        >
+                          {isEditing ? "Close edit" : "Edit"}
+                        </button>
+                      ) : null}
+                      {!compact ? (
+                        <button
                           className={`btn ghost ${isEnriching ? "enriching" : ""}`}
                           onClick={() => onEnrich(contact.id)}
                           disabled={isEnriching}
@@ -671,6 +742,19 @@ function ContactTable({
                     </div>
                   </td>
                 </tr>
+                {isEditing && editingContact ? (
+                  <tr className="editRow">
+                    <td colSpan={9} style={{ padding: 0 }}>
+                      <ContactEditForm
+                        contact={editingContact}
+                        saving={savingEditId === contact.id}
+                        onChange={onUpdateEdit}
+                        onCancel={onCancelEdit}
+                        onSave={onSaveEdit}
+                      />
+                    </td>
+                  </tr>
+                ) : null}
                 {isExpanded ? (
                   <tr key={`${contact.id}-enrich`} className="enrichRow">
                     <td colSpan={9} style={{ padding: 0 }}>
@@ -678,11 +762,76 @@ function ContactTable({
                     </td>
                   </tr>
                 ) : null}
-              </>
+              </React.Fragment>
             );
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function ContactEditForm({
+  contact,
+  saving,
+  onChange,
+  onCancel,
+  onSave
+}: {
+  contact: ContactRecord;
+  saving: boolean;
+  onChange: (patch: Partial<ContactRecord>) => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <div className="editPanel">
+      <div className="editPanelHeader">
+        <div>
+          <strong>Edit saved contact</strong>
+          <div className="editPanelSub">Changes update this dashboard record immediately after Save.</div>
+        </div>
+        <div className="actions">
+          <button className="btn" disabled={saving} onClick={onSave}>{saving ? "Saving…" : "💾 Save changes"}</button>
+          <button className="btn secondary" disabled={saving} onClick={onCancel}>Cancel</button>
+        </div>
+      </div>
+
+      <div className="grid editGrid">
+        <div className="field col6"><label>Name</label><input className="input" value={contact.name} onChange={(e) => onChange({ name: e.target.value })} /></div>
+        <div className="field col6"><label>Event</label><input className="input" value={contact.event_name} onChange={(e) => onChange({ event_name: e.target.value })} /></div>
+        <div className="field col6"><label>First name</label><input className="input" value={contact.first_name} onChange={(e) => onChange({ first_name: e.target.value })} /></div>
+        <div className="field col6"><label>Last name</label><input className="input" value={contact.last_name} onChange={(e) => onChange({ last_name: e.target.value })} /></div>
+        <div className="field col6"><label>Company</label><input className="input" value={contact.company} onChange={(e) => onChange({ company: e.target.value })} /></div>
+        <div className="field col6"><label>Title</label><input className="input" value={contact.title} onChange={(e) => onChange({ title: e.target.value })} /></div>
+        <div className="field col6"><label>Email</label><input className="input" type="email" value={contact.email} onChange={(e) => onChange({ email: e.target.value })} /></div>
+        <div className="field col6"><label>Website</label><input className="input" value={contact.website} onChange={(e) => onChange({ website: e.target.value })} /></div>
+        <div className="field col6"><label>Phone</label><input className="input" value={contact.phone} onChange={(e) => onChange({ phone: e.target.value })} /></div>
+        <div className="field col6"><label>Mobile</label><input className="input" value={contact.mobile} onChange={(e) => onChange({ mobile: e.target.value })} /></div>
+        <div className="field col6"><label>LinkedIn</label><input className="input" value={contact.linkedin_url} onChange={(e) => onChange({ linkedin_url: e.target.value })} /></div>
+        <div className="field col6"><label>Tags</label><input className="input" value={tagsToText(contact.tags)} onChange={(e) => onChange({ tags: textToTags(e.target.value) })} /></div>
+        <div className="field col6">
+          <label>Status</label>
+          <select className="input" value={contact.status} onChange={(e) => onChange({ status: e.target.value as ContactDraft["status"] })}>
+            <option>New</option>
+            <option>Reviewed</option>
+            <option>Qualified</option>
+            <option>Follow-up</option>
+            <option>Pushed to Salesforce</option>
+            <option>Duplicate</option>
+            <option>Rejected</option>
+          </select>
+        </div>
+        <div className="field col6"><label>Follow-up date</label><input className="input" type="date" value={contact.follow_up_date || ""} onChange={(e) => onChange({ follow_up_date: e.target.value || null })} /></div>
+        <div className="field col6"><label>Confidence</label><input className="input" type="number" min={0} max={100} value={contact.confidence} onChange={(e) => onChange({ confidence: Number(e.target.value) })} /></div>
+        <div className="field col6"><label>Source</label><input className="input" value={contact.source} onChange={(e) => onChange({ source: e.target.value })} /></div>
+        <div className="field col12"><label>Notes</label><textarea value={contact.notes} onChange={(e) => onChange({ notes: e.target.value })} /></div>
+      </div>
+
+      <details>
+        <summary className="editRawSummary">Advanced: OCR raw text</summary>
+        <textarea className="rawEditText" value={contact.raw_text} onChange={(e) => onChange({ raw_text: e.target.value })} />
+      </details>
     </div>
   );
 }
