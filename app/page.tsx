@@ -437,6 +437,10 @@ export default function Home() {
           <p className="subtitle">Per-contact vCard, QR, and enrichment JSON exports are available in the dashboard table.</p>
         </section>
       ) : null}
+
+      <footer className="ipFooter" aria-label="Intellectual property notice">
+        <strong>© 2026 Dr. Andreas Kemper.</strong> All rights reserved. Business Card Wizard and its CRM/OCR/enrichment workflows are intellectual property of Dr. Andreas Kemper.
+      </footer>
     </main>
   );
 }
