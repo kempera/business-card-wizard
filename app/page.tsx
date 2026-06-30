@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import type { ContactDraft, ContactRecord, FeatureStatus, SaveContactResult, SalesforcePushResult } from "./lib/types";
 
 type Tab = "upload" | "dashboard" | "salesforce" | "exports";
@@ -327,23 +327,16 @@ export default function Home() {
               <label htmlFor="eventName">Event name</label>
               <input id="eventName" className="input" value={eventName} onChange={(event) => setEventName(event.target.value)} />
             </div>
-            <div className="field">
-              <label htmlFor="files">Upload or use phone camera</label>
-              <input
-                id="files"
-                className="input"
-                type="file"
-                accept="image/*"
-                capture="environment"
-                multiple
-                onChange={(event) => setFiles(Array.from(event.target.files || []))}
-              />
+
+            {/* ── Multi-source upload zone ── */}
+            <UploadZone files={files} setFiles={setFiles} />
+
+            <div className="actions" style={{ marginTop: 14 }}>
+              <button className="btn" disabled={processing || !files.length} onClick={processCards}>
+                🚀 Process {files.length > 0 ? `${files.length} card${files.length > 1 ? "s" : ""}` : "cards"}
+              </button>
+              <button className="btn secondary" disabled={processing} onClick={() => { setDrafts([]); setFiles([]); }}>Clear all</button>
             </div>
-            <div className="actions">
-              <button className="btn" disabled={processing} onClick={processCards}>🚀 Process cards</button>
-              <button className="btn secondary" disabled={processing} onClick={() => { setDrafts([]); setFiles([]); }}>Clear queue</button>
-            </div>
-            <p className="subtitle">Selected: {files.map((file) => file.name).join(", ") || "none"}</p>
             <div className="progress" aria-label="Processing progress"><span style={{ width: `${progress}%` }} /></div>
           </div>
 
@@ -686,6 +679,142 @@ function ContactTable({
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/** UploadZone — drag-and-drop + gallery picker + live camera capture.
+ *  Files are ACCUMULATED across selections; each pick adds to the stack.
+ *  Thumbnails shown with individual ✕ remove buttons.
+ */
+function UploadZone({
+  files,
+  setFiles
+}: {
+  files: File[];
+  setFiles: (files: File[] | ((prev: File[]) => File[])) => void;
+}) {
+  const [dragging, setDragging] = useState(false);
+  const galleryRef = React.useRef<HTMLInputElement>(null);
+  const cameraRef = React.useRef<HTMLInputElement>(null);
+
+  function addFiles(incoming: FileList | null) {
+    if (!incoming || !incoming.length) return;
+    const newFiles = Array.from(incoming).filter((f) => f.type.startsWith("image/"));
+    setFiles((prev) => {
+      // Deduplicate by name+size
+      const existing = new Set(prev.map((f) => `${f.name}:${f.size}`));
+      return [...prev, ...newFiles.filter((f) => !existing.has(`${f.name}:${f.size}`))];
+    });
+  }
+
+  function removeFile(index: number) {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragging(false);
+    addFiles(e.dataTransfer.files);
+  }
+
+  return (
+    <div className="uploadZoneWrap">
+      {/* Drop target */}
+      <div
+        className={`uploadDropZone ${dragging ? "dragging" : ""} ${files.length ? "hasFiles" : ""}`}
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={onDrop}
+        onClick={() => galleryRef.current?.click()}
+        role="button"
+        tabIndex={0}
+        aria-label="Drop images here or click to browse"
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") galleryRef.current?.click(); }}
+      >
+        {files.length === 0 ? (
+          <>
+            <div className="uploadDropIcon">📂</div>
+            <div className="uploadDropText">Drop images here or click to browse</div>
+            <div className="uploadDropSub">JPEG · PNG · WEBP · HEIC</div>
+          </>
+        ) : (
+          <div className="uploadDropText" style={{ fontSize: 13 }}>
+            Drop more images here or click to add from gallery
+          </div>
+        )}
+      </div>
+
+      {/* Hidden inputs */}
+      {/* Gallery / existing photos picker — multiple, no capture constraint */}
+      <input
+        ref={galleryRef}
+        type="file"
+        accept="image/*"
+        multiple
+        style={{ display: "none" }}
+        onChange={(e) => addFiles(e.target.files)}
+        onClick={(e) => { (e.target as HTMLInputElement).value = ""; }}
+      />
+      {/* Camera capture — takes one photo at a time, adds to stack */}
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        style={{ display: "none" }}
+        onChange={(e) => addFiles(e.target.files)}
+        onClick={(e) => { (e.target as HTMLInputElement).value = ""; }}
+      />
+
+      {/* Source buttons */}
+      <div className="uploadSources">
+        <button
+          type="button"
+          className="btn ghost uploadSourceBtn"
+          onClick={(e) => { e.stopPropagation(); galleryRef.current?.click(); }}
+        >
+          🖼️ Add from gallery
+        </button>
+        <button
+          type="button"
+          className="btn ghost uploadSourceBtn"
+          onClick={(e) => { e.stopPropagation(); cameraRef.current?.click(); }}
+        >
+          📷 Take photo
+        </button>
+      </div>
+
+      {/* Thumbnail queue */}
+      {files.length > 0 ? (
+        <div className="uploadThumbGrid">
+          {files.map((file, index) => (
+            <div key={`${file.name}:${file.size}:${index}`} className="uploadThumb">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={URL.createObjectURL(file)} alt={file.name} />
+              <div className="uploadThumbName" title={file.name}>{file.name}</div>
+              <button
+                type="button"
+                className="uploadThumbRemove"
+                aria-label={`Remove ${file.name}`}
+                onClick={(e) => { e.stopPropagation(); removeFile(index); }}
+              >✕</button>
+            </div>
+          ))}
+          {/* Add-more tile */}
+          <div
+            className="uploadThumb uploadThumbAdd"
+            onClick={() => galleryRef.current?.click()}
+            role="button"
+            tabIndex={0}
+            aria-label="Add more images"
+            onKeyDown={(e) => { if (e.key === "Enter") galleryRef.current?.click(); }}
+          >
+            <span>＋</span>
+            <div className="uploadThumbName">Add more</div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

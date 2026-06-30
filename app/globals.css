@@ -72,6 +72,80 @@ th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spa
   .col6, .col4, .col3, .col8 { grid-column: span 12; }
 }
 
+/* Upload Zone */
+.uploadZoneWrap { display: flex; flex-direction: column; gap: 10px; margin-bottom: 4px; }
+.uploadDropZone {
+  border: 2px dashed var(--line);
+  border-radius: 18px;
+  padding: 28px 20px;
+  text-align: center;
+  cursor: pointer;
+  background: #f8faff;
+  transition: border-color .15s, background .15s;
+}
+.uploadDropZone:hover, .uploadDropZone:focus { border-color: var(--brand); background: #eef2ff; outline: none; }
+.uploadDropZone.dragging { border-color: var(--brand); background: #eef2ff; box-shadow: 0 0 0 4px #c7d2fe55; }
+.uploadDropZone.hasFiles { padding: 12px 20px; }
+.uploadDropIcon { font-size: 32px; margin-bottom: 8px; }
+.uploadDropText { font-weight: 700; color: var(--ink); }
+.uploadDropSub { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.uploadSources { display: flex; gap: 8px; flex-wrap: wrap; }
+.uploadSourceBtn { flex: 1; min-width: 120px; justify-content: center; }
+
+/* Thumbnail grid */
+.uploadThumbGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px; margin-top: 2px; }
+.uploadThumb {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #f1f5f9;
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.uploadThumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.uploadThumbName {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  background: rgba(15,23,42,.65);
+  color: #fff;
+  font-size: 9px;
+  padding: 2px 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+.uploadThumbRemove {
+  position: absolute;
+  top: 4px; right: 4px;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(185,28,28,.85);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1;
+  padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .15s;
+}
+.uploadThumb:hover .uploadThumbRemove { opacity: 1; }
+.uploadThumbAdd {
+  border: 2px dashed var(--line);
+  cursor: pointer;
+  color: var(--brand);
+  font-size: 24px;
+  background: #f8faff;
+}
+.uploadThumbAdd:hover { border-color: var(--brand); background: #eef2ff; }
+.uploadThumbAdd .uploadThumbName { background: transparent; color: var(--muted); font-size: 10px; position: static; padding: 0; }
+
 /* Enrichment panel */
 .enrichPanel { padding: 16px 20px 12px; background: #f8faff; border-top: 2px solid #c7d2fe; border-radius: 0 0 16px 16px; }
 .enrichPanel.empty { color: var(--muted); font-size: 13px; }
