@@ -9,6 +9,7 @@ const emptyFeatures: FeatureStatus = {
   database: false,
   googleVision: false,
   llmExtraction: false,
+  ocr: false,
   salesforce: false,
   linkedinEnrichment: false,
   auth: false

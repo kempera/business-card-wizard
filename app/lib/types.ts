@@ -54,6 +54,7 @@ export interface FeatureStatus {
   database: boolean;
   googleVision: boolean;
   llmExtraction: boolean;
+  ocr: boolean;
   salesforce: boolean;
   linkedinEnrichment: boolean;
   auth: boolean;

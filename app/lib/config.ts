@@ -24,10 +24,14 @@ export function appUrl(): string {
 }
 
 export function featureStatus(): FeatureStatus {
+  const hasGoogleVision = Boolean(env("GOOGLE_VISION_API_KEY"));
+  const hasLlm = Boolean(env("LLM_API_KEY"));
   return {
     database: Boolean(env("DATABASE_URL")),
-    googleVision: Boolean(env("GOOGLE_VISION_API_KEY")),
-    llmExtraction: Boolean(env("LLM_API_KEY")),
+    googleVision: hasGoogleVision,
+    llmExtraction: hasLlm,
+    // OCR works if Google Vision is configured, or if the LLM key supports vision (gpt-4o-mini etc.)
+    ocr: hasGoogleVision || hasLlm,
     salesforce: Boolean(
       env("SALESFORCE_CLIENT_ID") &&
         env("SALESFORCE_CLIENT_SECRET") &&

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { extractContact } from "@/app/lib/contact-extractor";
-import { googleVisionOcr } from "@/app/lib/ocr";
+import { runOcr } from "@/app/lib/ocr";
 
 export const runtime = "nodejs";
 
@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     const drafts = [];
     for (const file of files) {
       const imageBytes = Buffer.from(await file.arrayBuffer());
-      const rawText = await googleVisionOcr(imageBytes);
+      const rawText = await runOcr(imageBytes, file.type || "image/jpeg");
       const draft = await extractContact(rawText, eventName, file.name);
       drafts.push(draft);
     }
