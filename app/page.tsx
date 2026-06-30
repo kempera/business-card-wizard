@@ -352,7 +352,7 @@ function ContactTable({
                 <div className="actions">
                   <a className="btn ghost" href={`/api/exports/vcard?ids=${contact.id}`}>vCard</a>
                   <a className="btn ghost" href={`/api/exports/qr/${contact.id}`} target="_blank">QR</a>
-                  {!compact && contact.linkedin_url ? <button className="btn ghost" onClick={() => onEnrich(contact.id)}>Enrich</button> : null}
+                  {!compact ? <button className="btn ghost" onClick={() => onEnrich(contact.id)}>Enrich</button> : null}
                   {!compact ? <button className="btn danger" onClick={() => onDelete(contact.id)}>Delete</button> : null}
                 </div>
               </td>
